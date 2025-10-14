@@ -1,9 +1,14 @@
+// paymongo-only.js
+require("dotenv").config();
 const express = require("express");
 const fetch = require("node-fetch");
-const router = express.Router();
+const cors = require("cors");
 
-// ✅ Use router.post, not app.post
-router.post("/checkout", async (req, res) => {
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+app.post("/api/paymongo/checkout", async (req, res) => {
   try {
     const { name, amount } = req.body;
 
@@ -12,8 +17,7 @@ router.post("/checkout", async (req, res) => {
       headers: {
         "Content-Type": "application/json",
         "Authorization":
-          "Basic " +
-          Buffer.from(process.env.PAYMONGO_SECRET_KEY + ":").toString("base64"),
+          "Basic " + Buffer.from(process.env.PAYMONGO_SECRET_KEY + ":").toString("base64"),
       },
       body: JSON.stringify({
         data: {
@@ -22,7 +26,7 @@ router.post("/checkout", async (req, res) => {
               {
                 name: name || "GCash Purchase",
                 quantity: 1,
-                amount: amount || 5000, // ₱50.00 in centavos
+                amount: amount || 5000, // ₱50.00 (centavos)
                 currency: "PHP",
               },
             ],
@@ -41,17 +45,12 @@ router.post("/checkout", async (req, res) => {
       return res.status(response.status).json({ success: false, error: data });
     }
 
-    res.json({
-      success: true,
-      checkout_url: data.data.attributes.checkout_url,
-    });
+    res.json({ success: true, checkout_url: data.data.attributes.checkout_url });
   } catch (err) {
     console.error("Checkout creation failed:", err);
-    res.status(500).json({
-      success: false,
-      message: err.message || "Failed to create checkout session",
-    });
+    res.status(500).json({ success: false, message: err.message || "Failed to create checkout" });
   }
 });
 
-module.exports = router;
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`🚀 PayMongo API running on port ${PORT}`));
