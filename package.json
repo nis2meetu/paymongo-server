@@ -1,3 +1,14 @@
-"scripts": {
-  "start": "node paymongo.js"
+{
+  "name": "paymongo-server",
+  "version": "1.0.0",
+  "main": "paymongo.js",
+  "scripts": {
+    "start": "node paymongo.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0"
+  }
 }
