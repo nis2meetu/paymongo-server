@@ -112,3 +112,11 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     res.sendStatus(500);
   }
 });
+
+// ---------------- START SERVER ----------------
+const PORT = process.env.PORT || 10000; // Render provides PORT automatically
+app.listen(PORT, () => {
+  console.log(`🚀 PayMongo API running on port ${PORT}`);
+});
+
+
