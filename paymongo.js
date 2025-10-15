@@ -52,6 +52,38 @@ payment_method_types: ["gcash", "card"],
   }
 });
 
+
+// ✅ PayMongo Webhook — called by PayMongo when payment status changes
+app.post("/api/paymongo/webhook", async (req, res) => {
+  try {
+    const event = req.body;
+
+    console.log("📩 Webhook received from PayMongo:");
+    console.log(JSON.stringify(event, null, 2));
+
+    // Get payment status type
+    const eventType = event.data.type;
+    const attributes = event.data.attributes;
+
+    if (eventType === "checkout.session.payment_paid") {
+      console.log("✅ Payment success for session:", attributes.id);
+
+      // Example: you could update Firestore here or your database
+      // await updateTransaction(attributes.reference_number, "Success");
+    } else if (eventType === "checkout.session.payment_failed") {
+      console.log("❌ Payment failed for session:", attributes.id);
+      // You can also mark it as failed in your DB
+    }
+
+    // Always respond 200 OK so PayMongo knows you received it
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("Webhook error:", err);
+    res.status(400).send("Webhook processing failed");
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 PayMongo API running on port ${PORT}`));
+
 
