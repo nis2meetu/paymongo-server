@@ -84,25 +84,31 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
     const attributes = data.attributes;
     const reference_id = attributes.reference_number;
-    const status = attributes.payment_intent?.data?.attributes?.status || "unknown";
+    const payment_status =
+      attributes.payment_intent?.data?.attributes?.status || "unknown";
+
+    console.log("🔔 Webhook received for:", reference_id, "| Status:", payment_status);
 
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
+
+      // ✅ Correct Firestore query
       const snapshot = await transactionsRef
-        .where("reference_id.stringValue", "==", reference_id)
+        .where("reference_id", "==", reference_id)
         .get();
 
       if (snapshot.empty) {
         console.log("⚠️ No matching transaction found for:", reference_id);
       } else {
-        snapshot.forEach(async (doc) => {
-          await doc.ref.update({
-            status: {
-              stringValue: status === "succeeded" || status === "paid" ? "Success" : "Failed",
-            },
-          });
-          console.log(`✅ Updated transaction ${doc.id} → ${status}`);
-        });
+        for (const doc of snapshot.docs) {
+          const newStatus =
+            payment_status === "succeeded" || payment_status === "paid"
+              ? "Success"
+              : "Failed";
+
+          await doc.ref.update({ status: newStatus });
+          console.log(`✅ Updated transaction ${doc.id} → ${newStatus}`);
+        }
       }
     }
 
@@ -118,5 +124,6 @@ const PORT = process.env.PORT || 10000; // Render provides PORT automatically
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
