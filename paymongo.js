@@ -78,48 +78,64 @@ app.post("/api/paymongo/checkout", async (req, res) => {
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
-    const type = event.type;
-    const data = event.data;
+    const type = event?.type;
+    const data = event?.data;
 
     if (!data || !data.attributes) return res.sendStatus(400);
 
     const attributes = data.attributes;
 
-    // ✅ Get the correct reference ID from inside the attributes
-    const reference_id = attributes.data?.id 
-      || attributes.checkout_session_id 
-      || attributes.reference_number 
-      || null;
+    // ✅ Extract reference or checkout session ID safely
+    const reference_id =
+      attributes.reference_number ||
+      attributes.checkout_session_id ||
+      attributes.data?.id ||
+      attributes.id ||
+      null;
 
-    let payment_status = "successful";
+    // ✅ Default to unknown for debugging
+    let payment_status = "unknown";
 
-    // ✅ Handle checkout session payment events
-    if (type === "checkout_session.payment.paid") {
-      payment_status = "paid";
+    // ✅ Detect event type and assign proper status
+    switch (type) {
+      case "checkout_session.payment.paid":
+      case "payment.paid":
+        payment_status = "paid";
+        break;
+      case "payment.failed":
+        payment_status = "failed";
+        break;
+      case "payment.refunded":
+        payment_status = "refunded";
+        break;
+      default:
+        payment_status =
+          attributes.payment_intent?.data?.attributes?.status || "unknown";
+        break;
     }
-
-    // ✅ Handle direct payments
-    if (type === "payment.paid" || attributes.payment_intent?.data?.attributes?.status === "succeeded") {
-      payment_status = "paid";
-    }
-
-    if (type === "payment.failed") payment_status = "failed";
-    if (type === "payment.refunded") payment_status = "refunded";
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
+    // ✅ Proceed only if we have a reference_id
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
-      const snapshot = await transactionsRef.where("reference_id", "==", reference_id).get();
+      const snapshot = await transactionsRef
+        .where("reference_id", "==", reference_id)
+        .get();
 
       if (snapshot.empty) {
         console.log("⚠️ No matching transaction found for:", reference_id);
       } else {
         for (const doc of snapshot.docs) {
-          await doc.ref.update({ status: payment_status });
+          await doc.ref.update({
+            status: payment_status,
+            last_updated: admin.firestore.FieldValue.serverTimestamp(), // ✅ Automatic server time
+          });
           console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
         }
       }
+    } else {
+      console.log("⚠️ Missing reference ID in webhook data.");
     }
 
     res.sendStatus(200);
@@ -130,11 +146,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 });
 
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
