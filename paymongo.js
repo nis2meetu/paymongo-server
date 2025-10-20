@@ -9,7 +9,6 @@ app.use(express.json());
 app.use(cors());
 
 // ---------------- FIREBASE INITIALIZATION ----------------
-// Decode the base64 service account JSON from environment variable
 const serviceAccount = JSON.parse(
   Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, "base64").toString("utf8")
 );
@@ -39,7 +38,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
               {
                 name: name || "GCash Purchase",
                 quantity: 1,
-                amount: amount || 5000, // ₱50.00 (centavos)
+                amount: amount || 5000, // ₱50.00
                 currency: "PHP",
               },
             ],
@@ -58,12 +57,13 @@ app.post("/api/paymongo/checkout", async (req, res) => {
       return res.status(response.status).json({ success: false, error: data });
     }
 
-    const reference_id = data?.data?.attributes?.reference_number || null;
+    // ✅ Use the checkout session ID as the reference ID
+    const reference_id = data?.data?.id || null;
 
     res.json({
       success: true,
       checkout_url: data.data.attributes.checkout_url,
-      reference_id,
+      reference_id, // e.g., "chkout_abc123"
     });
   } catch (err) {
     console.error("Checkout creation failed:", err);
@@ -84,29 +84,25 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     if (!data || !data.attributes) return res.sendStatus(400);
 
     const attributes = data.attributes;
-    const reference_id = attributes.reference_number;
+    const reference_id = data.id; // ✅ now use the checkout_session ID
     let payment_status = "unknown";
 
-    // ✅ Handle checkout session event
+    // ✅ Handle checkout session payment events
     if (type === "checkout_session.payment.paid") {
       payment_status = "paid";
     }
 
-    // ✅ Handle normal payment (if ever used)
+    // ✅ Handle direct payments (if ever used)
     if (type === "payment.paid" || attributes.payment_intent?.data?.attributes?.status === "succeeded") {
       payment_status = "paid";
     }
 
-    // ✅ Handle failed or refunded (optional)
-    if (type === "payment.failed") {
-      payment_status = "failed";
-    }
-    if (type === "payment.refunded") {
-      payment_status = "refunded";
-    }
+    if (type === "payment.failed") payment_status = "failed";
+    if (type === "payment.refunded") payment_status = "refunded";
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
+    // ✅ Match by checkout session ID
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
       const snapshot = await transactionsRef.where("reference_id", "==", reference_id).get();
@@ -128,13 +124,8 @@ app.post("/api/paymongo/webhook", async (req, res) => {
   }
 });
 
-
 // ---------------- START SERVER ----------------
-const PORT = process.env.PORT || 10000; // Render provides PORT automatically
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
-
-
-
-
