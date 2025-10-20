@@ -94,7 +94,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       null;
 
     // ✅ Default to unknown for debugging
-    let payment_status = "unknown";
+    let payment_status = "successful";
 
     // ✅ Detect event type and assign proper status
     switch (type) {
@@ -152,6 +152,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
