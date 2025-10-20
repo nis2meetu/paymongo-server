@@ -84,7 +84,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     if (!data || !data.attributes) return res.sendStatus(400);
 
     const attributes = data.attributes;
-    const reference_id = data.id; // ✅ now use the checkout_session ID
+
+    // ✅ Get the correct reference ID from inside the attributes
+    const reference_id = attributes.data?.id 
+      || attributes.checkout_session_id 
+      || attributes.reference_number 
+      || null;
+
     let payment_status = "unknown";
 
     // ✅ Handle checkout session payment events
@@ -92,7 +98,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       payment_status = "paid";
     }
 
-    // ✅ Handle direct payments (if ever used)
+    // ✅ Handle direct payments
     if (type === "payment.paid" || attributes.payment_intent?.data?.attributes?.status === "succeeded") {
       payment_status = "paid";
     }
@@ -102,7 +108,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
-    // ✅ Match by checkout session ID
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
       const snapshot = await transactionsRef.where("reference_id", "==", reference_id).get();
@@ -124,8 +129,10 @@ app.post("/api/paymongo/webhook", async (req, res) => {
   }
 });
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
