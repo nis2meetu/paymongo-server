@@ -91,7 +91,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       || attributes.reference_number 
       || null;
 
-    let payment_status = "unknown";
+    let payment_status = "success";
 
     // ✅ Handle checkout session payment events
     if (type === "checkout_session.payment.paid") {
@@ -135,4 +135,5 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
