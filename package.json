@@ -3,13 +3,19 @@
   "version": "1.0.0",
   "main": "paymongo.js",
   "scripts": {
+    "preinstall": "npm config set registry https://registry.npmmirror.com/",
+    "postinstall": "npm rebuild && npm cache verify",
     "start": "node paymongo.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.2.1",
-    "express": "^5.1.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
     "node-fetch": "^2.7.0",
-    "firebase-admin": "^11.10.1"
+    "firebase-admin": "^11.10.1",
+    "@fastify/busboy": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=18 <23"
   }
 }
