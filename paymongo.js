@@ -81,11 +81,14 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     const type = event?.type;
     const data = event?.data;
 
-    if (!data || !data.attributes) return res.sendStatus(400);
+    if (!data || !data.attributes) {
+      console.warn("⚠️ Invalid webhook payload — missing attributes.");
+      return res.sendStatus(400);
+    }
 
     const attributes = data.attributes;
 
-    // ✅ Extract reference or checkout session ID safely
+    // ✅ Extract the correct reference or session ID safely
     const reference_id =
       attributes.reference_number ||
       attributes.checkout_session_id ||
@@ -93,10 +96,10 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       attributes.id ||
       null;
 
-    // ✅ Default to unknown for debugging
+    // ✅ Default payment status
     let payment_status = "successful";
 
-    // ✅ Detect event type and assign proper status
+    // ✅ Determine status based on PayMongo event type
     switch (type) {
       case "checkout_session.payment.paid":
       case "payment.paid":
@@ -109,14 +112,17 @@ app.post("/api/paymongo/webhook", async (req, res) => {
         payment_status = "refunded";
         break;
       default:
-        payment_status =
-          attributes.payment_intent?.data?.attributes?.status || "unknown";
+        if (attributes.payment_intent?.data?.attributes?.status === "succeeded") {
+          payment_status = "paid";
+        } else if (attributes.payment_intent?.data?.attributes?.status) {
+          payment_status = attributes.payment_intent.data.attributes.status;
+        }
         break;
     }
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
-    // ✅ Proceed only if we have a reference_id
+    // ✅ Update Firestore if we have a valid reference_id
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
       const snapshot = await transactionsRef
@@ -124,18 +130,18 @@ app.post("/api/paymongo/webhook", async (req, res) => {
         .get();
 
       if (snapshot.empty) {
-        console.log("⚠️ No matching transaction found for:", reference_id);
+        console.warn("⚠️ No matching transaction found for:", reference_id);
       } else {
         for (const doc of snapshot.docs) {
           await doc.ref.update({
             status: payment_status,
-            last_updated: admin.firestore.FieldValue.serverTimestamp(), // ✅ Automatic server time
+            last_updated: admin.firestore.FieldValue.serverTimestamp(), // ✅ Firestore server time
           });
           console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
         }
       }
     } else {
-      console.log("⚠️ Missing reference ID in webhook data.");
+      console.warn("⚠️ Missing reference_id in webhook payload.");
     }
 
     res.sendStatus(200);
@@ -147,11 +153,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
 
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
