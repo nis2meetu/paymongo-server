@@ -78,36 +78,45 @@ app.post("/api/paymongo/checkout", async (req, res) => {
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
+    const type = event.type;
     const data = event.data;
 
     if (!data || !data.attributes) return res.sendStatus(400);
 
     const attributes = data.attributes;
     const reference_id = attributes.reference_number;
-    const payment_status =
-      attributes.payment_intent?.data?.attributes?.status || "unknown";
+    let payment_status = "unknown";
 
-    console.log("🔔 Webhook received for:", reference_id, "| Status:", payment_status);
+    // ✅ Handle checkout session event
+    if (type === "checkout_session.payment.paid") {
+      payment_status = "paid";
+    }
+
+    // ✅ Handle normal payment (if ever used)
+    if (type === "payment.paid" || attributes.payment_intent?.data?.attributes?.status === "succeeded") {
+      payment_status = "paid";
+    }
+
+    // ✅ Handle failed or refunded (optional)
+    if (type === "payment.failed") {
+      payment_status = "failed";
+    }
+    if (type === "payment.refunded") {
+      payment_status = "refunded";
+    }
+
+    console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
     if (reference_id) {
       const transactionsRef = db.collection("transactions");
-
-      // ✅ Correct Firestore query
-      const snapshot = await transactionsRef
-        .where("reference_id", "==", reference_id)
-        .get();
+      const snapshot = await transactionsRef.where("reference_id", "==", reference_id).get();
 
       if (snapshot.empty) {
         console.log("⚠️ No matching transaction found for:", reference_id);
       } else {
         for (const doc of snapshot.docs) {
-          const newStatus =
-            payment_status === "succeeded" || payment_status === "paid"
-              ? "Success"
-              : "Failed";
-
-          await doc.ref.update({ status: newStatus });
-          console.log(`✅ Updated transaction ${doc.id} → ${newStatus}`);
+          await doc.ref.update({ status: payment_status });
+          console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
         }
       }
     }
@@ -119,11 +128,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
   }
 });
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000; // Render provides PORT automatically
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
