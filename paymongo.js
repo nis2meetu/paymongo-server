@@ -74,7 +74,6 @@ app.post("/api/paymongo/checkout", async (req, res) => {
   }
 });
 
-// ---------------- PAYMONGO WEBHOOK ----------------
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
@@ -94,6 +93,11 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       attributes.data?.id ||
       attributes.id ||
       null;
+
+    if (!reference_id) {
+      console.warn("⚠️ Missing reference_id in webhook payload.", JSON.stringify(attributes, null, 2));
+      return res.sendStatus(400);
+    }
 
     let payment_status = "successful";
 
@@ -119,11 +123,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
-    if (!reference_id) {
-      console.warn("⚠️ Missing reference_id in webhook payload.");
-      return res.sendStatus(400);
-    }
-
     const transactionsRef = db.collection("transactions");
     const snapshot = await transactionsRef
       .where("reference_id", "==", reference_id)
@@ -134,7 +133,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       return res.sendStatus(404);
     }
 
-    // 🔁 Loop through each matching transaction
     for (const doc of snapshot.docs) {
       const transaction = doc.data();
       const userId = transaction.user_id;
@@ -149,43 +147,49 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
-     // ✅ If payment is successful, add offer to player's inventory
-if (payment_status === "successful" && userId) {
-  const offerId = transaction.offer_id || "unknown_offer"; // ✅ from Firestore transaction
-  const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
-  const inventoryDoc = await inventoryDocRef.get();
+      // ✅ If payment is successful, add offer to player's inventory
+      if (payment_status === "paid" && userId) {
+        const offerId = transaction.offer_id || "unknown_offer";
+        const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
+        const inventoryDoc = await inventoryDocRef.get();
 
-  const offerEntry = {
-    offer_id: offerId,
-    title: title,
-    quantity: quantity,
-    obtained_at: admin.firestore.FieldValue.serverTimestamp(),
-  };
+        const offerEntry = {
+          offer_id: offerId,
+          title: title,
+          quantity: quantity,
+          obtained_at: admin.firestore.FieldValue.serverTimestamp(),
+        };
 
-  if (inventoryDoc.exists) {
-    const data = inventoryDoc.data();
-    const items = data.items || {};
+        if (inventoryDoc.exists) {
+          const data = inventoryDoc.data();
+          const items = data.items || {};
 
-    // Merge offer_id into existing map (keyed by offer_id)
-    items[offerId] = {
-      ...(items[offerId] || {}),
-      ...offerEntry,
-      quantity: (items[offerId]?.quantity || 0) + quantity,
-      last_updated: admin.firestore.FieldValue.serverTimestamp(),
-    };
+          items[offerId] = {
+            ...(items[offerId] || {}),
+            ...offerEntry,
+            quantity: (items[offerId]?.quantity || 0) + quantity,
+            last_updated: admin.firestore.FieldValue.serverTimestamp(),
+          };
 
-    await inventoryDocRef.update({ items });
-    console.log(`🪙 Updated inventory with offer_id: ${offerId} (+${quantity})`);
-  } else {
-    // Create new inventory doc if none exists
-    await inventoryDocRef.set({
-      items: {
-        [offerId]: offerEntry,
-      },
-    });
-    console.log(`🎁 Created new inventory doc with offer_id: ${offerId} x${quantity}`);
+          await inventoryDocRef.update({ items });
+          console.log(`🪙 Updated inventory with offer_id: ${offerId} (+${quantity})`);
+        } else {
+          await inventoryDocRef.set({
+            items: {
+              [offerId]: offerEntry,
+            },
+          });
+          console.log(`🎁 Created new inventory doc with offer_id: ${offerId} x${quantity}`);
+        }
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error("❌ Webhook error:", err);
+    res.sendStatus(500);
   }
-}
+});
 
 
     // ✅ Success response after processing all transactions
@@ -204,6 +208,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
