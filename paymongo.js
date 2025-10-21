@@ -88,7 +88,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
     const attributes = data.attributes;
 
-    // ✅ Extract the correct reference or session ID safely
     const reference_id =
       attributes.reference_number ||
       attributes.checkout_session_id ||
@@ -96,10 +95,8 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       attributes.id ||
       null;
 
-    // ✅ Default payment status
     let payment_status = "successful";
 
-    // ✅ Determine status based on PayMongo event type
     switch (type) {
       case "checkout_session.payment.paid":
       case "payment.paid":
@@ -122,26 +119,58 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
     console.log(`🔔 Webhook: ${type} | Ref: ${reference_id} | Status: ${payment_status}`);
 
-    // ✅ Update Firestore if we have a valid reference_id
-    if (reference_id) {
-      const transactionsRef = db.collection("transactions");
-      const snapshot = await transactionsRef
-        .where("reference_id", "==", reference_id)
-        .get();
+    if (!reference_id) {
+      console.warn("⚠️ Missing reference_id in webhook payload.");
+      return res.sendStatus(400);
+    }
 
-      if (snapshot.empty) {
-        console.warn("⚠️ No matching transaction found for:", reference_id);
-      } else {
-        for (const doc of snapshot.docs) {
-          await doc.ref.update({
-            status: payment_status,
-            last_updated: admin.firestore.FieldValue.serverTimestamp(), // ✅ Firestore server time
+    const transactionsRef = db.collection("transactions");
+    const snapshot = await transactionsRef
+      .where("reference_id", "==", reference_id)
+      .get();
+
+    if (snapshot.empty) {
+      console.warn("⚠️ No matching transaction found for:", reference_id);
+      return res.sendStatus(404);
+    }
+
+    for (const doc of snapshot.docs) {
+      const transaction = doc.data();
+      const userId = transaction.user_id;
+      const title = transaction.title;
+      const quantity = transaction.quantity || 1;
+
+      // ✅ Update transaction status
+      await doc.ref.update({
+        status: payment_status,
+        last_updated: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
+
+      // ✅ If payment is successful, add item to player's inventory
+      if (payment_status === "paid" && userId) {
+        const inventoryRef = db.collection(`users/players/${userId}/inventory`);
+        const itemDoc = inventoryRef.doc(title); // Use title as item key
+
+        // Check if item already exists in inventory
+        const existingItem = await itemDoc.get();
+        if (existingItem.exists) {
+          const currentQty = existingItem.data().quantity || 0;
+          await itemDoc.update({
+            quantity: currentQty + quantity,
+            last_updated: admin.firestore.FieldValue.serverTimestamp(),
           });
-          console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
+          console.log(`🪙 Updated existing inventory item: ${title} (+${quantity})`);
+        } else {
+          await itemDoc.set({
+            title: title,
+            quantity: quantity,
+            obtained_at: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          console.log(`🎁 Added new inventory item: ${title} x${quantity}`);
         }
       }
-    } else {
-      console.warn("⚠️ Missing reference_id in webhook payload.");
     }
 
     res.sendStatus(200);
@@ -159,6 +188,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
