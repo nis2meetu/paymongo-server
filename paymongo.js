@@ -134,6 +134,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       return res.sendStatus(404);
     }
 
+    // 🔁 Loop through each matching transaction
     for (const doc of snapshot.docs) {
       const transaction = doc.data();
       const userId = transaction.user_id;
@@ -150,29 +151,40 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       // ✅ If payment is successful, add item to player's inventory
       if (payment_status === "successful" && userId) {
-        const inventoryRef = db.collection(`users/players/${userId}/inventory`);
-        const itemDoc = inventoryRef.doc(title); // Use title as item key
+        // inventory is a document, not a collection
+        const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
+        const inventoryDoc = await inventoryDocRef.get();
 
-        // Check if item already exists in inventory
-        const existingItem = await itemDoc.get();
-        if (existingItem.exists) {
-          const currentQty = existingItem.data().quantity || 0;
-          await itemDoc.update({
-            quantity: currentQty + quantity,
-            last_updated: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          console.log(`🪙 Updated existing inventory item: ${title} (+${quantity})`);
-        } else {
-          await itemDoc.set({
+        if (inventoryDoc.exists) {
+          const data = inventoryDoc.data();
+          const items = data.items || {}; // assuming inventory stores items in an "items" map
+
+          // Update or add the item inside the map
+          items[title] = {
             title: title,
-            quantity: quantity,
-            obtained_at: admin.firestore.FieldValue.serverTimestamp(),
+            quantity: (items[title]?.quantity || 0) + quantity,
+            last_updated: admin.firestore.FieldValue.serverTimestamp(),
+          };
+
+          await inventoryDocRef.update({ items });
+          console.log(`🪙 Updated inventory document: ${title} (+${quantity})`);
+        } else {
+          // Create a new inventory document if it doesn’t exist
+          await inventoryDocRef.set({
+            items: {
+              [title]: {
+                title: title,
+                quantity: quantity,
+                obtained_at: admin.firestore.FieldValue.serverTimestamp(),
+              },
+            },
           });
-          console.log(`🎁 Added new inventory item: ${title} x${quantity}`);
+          console.log(`🎁 Created new inventory document with item: ${title} x${quantity}`);
         }
       }
     }
 
+    // ✅ Success response after processing all transactions
     res.sendStatus(200);
   } catch (err) {
     console.error("❌ Webhook error:", err);
@@ -188,6 +200,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
