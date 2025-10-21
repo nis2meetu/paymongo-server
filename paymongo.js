@@ -147,51 +147,46 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
-    // ✅ If payment is successful, add or update offer in player's inventory
-if (payment_status === "successful" && userId) {
-  const offerId = transaction.offer_id || "unknown_offer";
-  const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
-  const inventoryDoc = await inventoryDocRef.get();
+      // ✅ If payment is successful or paid, update player's inventory
+      if ((payment_status === "successful" || payment_status === "paid") && userId) {
+        const offerId = transaction.offer_id || "unknown_offer";
+        const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
+        const inventoryDoc = await inventoryDocRef.get();
 
-  const newStock = quantity; // Amount bought this transaction
+        const offerEntry = {
+          offer_id: offerId,
+          title: title,
+          quantity: quantity,
+          obtained_at: admin.firestore.FieldValue.serverTimestamp(),
+        };
 
-  const offerEntry = {
-    offer_id: offerId,
-    title: title,
-    quantity: quantity,
-    stock: newStock,
-    obtained_at: admin.firestore.FieldValue.serverTimestamp(),
-  };
+        if (inventoryDoc.exists) {
+          const data = inventoryDoc.data();
+          const items = data.items || {};
 
-  if (inventoryDoc.exists) {
-    const data = inventoryDoc.data();
-    const items = data.items || {};
+          // If offer already exists, increment quantity
+          const existing = items[offerId] || {};
+          const updatedQuantity = (existing.quantity || 0) + quantity;
 
-    // If offer already exists, increment stock
-    const existing = items[offerId] || {};
-    const updatedStock = (existing.stock || 0) + newStock;
+          items[offerId] = {
+            ...existing,
+            ...offerEntry,
+            quantity: updatedQuantity,
+            last_updated: admin.firestore.FieldValue.serverTimestamp(),
+          };
 
-    items[offerId] = {
-      ...existing,
-      ...offerEntry,
-      stock: updatedStock,
-      quantity: updatedStock, // Keep quantity aligned with stock
-      last_updated: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    await inventoryDocRef.update({ items });
-    console.log(`🪙 Updated inventory: ${offerId} stock +${newStock} → ${updatedStock}`);
-  } else {
-    // Create new inventory doc if none exists
-    await inventoryDocRef.set({
-      items: {
-        [offerId]: offerEntry,
-      },
-    });
-    console.log(`🎁 Created new inventory doc with offer_id: ${offerId} (stock=${newStock})`);
-  }
-}
-
+          await inventoryDocRef.update({ items });
+          console.log(`🪙 Updated inventory: ${offerId} +${quantity} → ${updatedQuantity}`);
+        } else {
+          // Create new inventory doc if none exists
+          await inventoryDocRef.set({
+            items: {
+              [offerId]: offerEntry,
+            },
+          });
+          console.log(`🎁 Created new inventory doc with offer_id: ${offerId} (quantity=${quantity})`);
+        }
+      }
     }
 
     res.sendStatus(200);
@@ -212,6 +207,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
