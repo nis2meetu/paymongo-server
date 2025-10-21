@@ -149,7 +149,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
       // ✅ If payment is successful, add item to player's inventory
-      if (payment_status === "paid" && userId) {
+      if (payment_status === "successful" && userId) {
         const inventoryRef = db.collection(`users/players/${userId}/inventory`);
         const itemDoc = inventoryRef.doc(title); // Use title as item key
 
@@ -188,6 +188,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
