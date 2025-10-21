@@ -148,7 +148,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
       // ✅ If payment is successful, add offer to player's inventory
-      if (payment_status === "paid" && userId) {
+      if (payment_status === "successful" && userId) {
         const offerId = transaction.offer_id || "unknown_offer";
         const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
         const inventoryDoc = await inventoryDocRef.get();
@@ -192,13 +192,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 });
 
 
-    // ✅ Success response after processing all transactions
-    res.sendStatus(200);
-  } catch (err) {
-    console.error("❌ Webhook error:", err);
-    res.sendStatus(500);
-  }
-});
+
 
 
 
@@ -208,6 +202,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
