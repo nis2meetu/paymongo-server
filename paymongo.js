@@ -166,7 +166,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
         // Loop through all items in the offer
         for (const offerItem of offerItems) {
           const itemId = offerItem.item_id;
-          const totalQty = (offerItem.quantity || 1) * quantity;
+          const totalQty = (offerItem.quantity || 1) * (purchaseData.quantity || 1);
 
           // 🔍 Get item details from /items collection
           const itemSnapshot = await db.collection("items").doc(itemId).get();
@@ -227,6 +227,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
