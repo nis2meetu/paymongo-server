@@ -74,6 +74,12 @@ app.post("/api/paymongo/checkout", async (req, res) => {
   }
 });
 
+
+
+
+
+
+
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
@@ -131,6 +137,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       return res.sendStatus(404);
     }
 
+    // Process all matched transactions
     for (const doc of snapshot.docs) {
       const transaction = doc.data();
       const userId = transaction.user_id;
@@ -155,20 +162,21 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
         const offerData = offerSnapshot.data();
         const offerItems = offerData.items || [];
-        const isBundle = offerData.is_bundle === true;
 
+        // Get inventory
         const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
         const inventoryDoc = await inventoryDocRef.get();
         const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
         let gems = currentInventory.gems || 0;
         let items = currentInventory.items || {};
 
-        // Loop through all items in the offer
+        // ✅ Loop through offer items here (inside)
         for (const offerItem of offerItems) {
           const itemId = offerItem.item_id;
-          const totalQty = (offerItem.quantity || 1) * (purchaseData.quantity || 1);
+          // ✅ Use one of these depending on your design
+          const totalQty = offerItem.quantity || 1; // or (offerItem.quantity || 1) * quantity;
 
-          // 🔍 Get item details from /items collection
+          // Get item info
           const itemSnapshot = await db.collection("items").doc(itemId).get();
           const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
           const isGem = (itemData.category || "").toLowerCase() === "gem";
@@ -185,7 +193,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
             );
             console.log(`💎 Added ${totalQty} Gems → Total: ${gems}`);
           } else {
-            // 🎁 Add non-gem items
+            // 🎁 Add other items
             const existing = items[itemId] || {};
             const updatedQty = (existing.quantity || 0) + totalQty;
 
@@ -221,12 +229,12 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
 
 
-
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
