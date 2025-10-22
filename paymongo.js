@@ -8,6 +8,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+require("./send_verification.js");
+
+
 // ---------------- FIREBASE INITIALIZATION ----------------
 const serviceAccount = JSON.parse(
   Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, "base64").toString("utf8")
@@ -234,6 +237,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
