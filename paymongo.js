@@ -21,7 +21,7 @@ admin.initializeApp({
 const db = admin.firestore();
 
 // ---------------- EMAIL VERIFICATION ----------------
-const verificationCodes = new Map();
+
 
 // ---------------- EMAIL VERIFICATION ----------------
 app.post("/api/send-verification", async (req, res) => {
@@ -35,13 +35,14 @@ app.post("/api/send-verification", async (req, res) => {
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = admin.firestore.Timestamp.fromDate(
-    new Date(Date.now() + 5 * 60 * 1000)
+    new Date(Date.now() + 5 * 60 * 1000) // expires in 5 minutes
   );
 
   console.log(`Generated code: ${code} for user: ${user_id}`);
   console.log("Expires at:", expiresAt.toDate().toISOString());
 
   try {
+    // Save code to Firestore
     const docRef = db.collection("email_verifications").doc(user_id);
     console.log("📄 Writing to Firestore doc:", docRef.path);
 
@@ -54,12 +55,21 @@ app.post("/api/send-verification", async (req, res) => {
 
     console.log("✅ Firestore write successful!");
 
-    // Send email
+    // ---------------- Nodemailer SMTP ----------------
     const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      host: "smtp.gmail.com",
+      port: 587,
+      secure: false, // TLS
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, // App password
+      },
+      tls: {
+        rejectUnauthorized: false, // helps avoid Render SSL issues
+      },
     });
 
+    console.log("📧 Sending verification email via SMTP...");
     const mailOptions = {
       from: `"Game Support" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -69,13 +79,19 @@ app.post("/api/send-verification", async (req, res) => {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log("📨 Email sent successfully to", email);
+    console.log("✅ Email sent successfully to", email);
 
     res.json({ success: true, message: "Verification email sent." });
   } catch (err) {
-    console.error("❌ Error writing to Firestore or sending email:", err);
+    console.error("❌ Error sending verification email:", err);
     res.status(500).json({ success: false, error: "Failed to send email." });
   }
+});
+
+// ---------------- START SERVER ----------------
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`🚀 Verification API running on port ${PORT}`);
 });
 
 
@@ -316,6 +332,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
