@@ -3,13 +3,11 @@ const express = require("express");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const admin = require("firebase-admin");
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.json());
 app.use(cors());
-
-require("./send_verification.js");
-
 
 // ---------------- FIREBASE INITIALIZATION ----------------
 const serviceAccount = JSON.parse(
@@ -21,6 +19,60 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
+
+// ---------------- EMAIL VERIFICATION ----------------
+const verificationCodes = new Map();
+
+app.post("/api/send-verification", async (req, res) => {
+  const { email, user_id } = req.body;
+
+  if (!email || !user_id)
+    return res.status(400).json({ error: "Missing email or user_id" });
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  verificationCodes.set(user_id, code);
+
+  console.log(`Generated code for ${user_id}: ${code}`);
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS, // App password, not real password
+    },
+  });
+
+  const mailOptions = {
+    from: `"Game Support" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Verify your email address",
+    text: `Your verification code is: ${code}`,
+    html: `<h2>Your verification code</h2><p style="font-size:18px;"><b>${code}</b></p>`,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    res.json({ success: true, message: "Verification email sent." });
+  } catch (err) {
+    console.error("Error sending email:", err);
+    res.status(500).json({ success: false, error: "Failed to send email." });
+  }
+});
+
+app.post("/api/verify-code", (req, res) => {
+  const { user_id, code } = req.body;
+
+  if (!verificationCodes.has(user_id))
+    return res.status(400).json({ success: false, message: "No code found." });
+
+  const storedCode = verificationCodes.get(user_id);
+  if (storedCode === code) {
+    verificationCodes.delete(user_id);
+    return res.json({ success: true, message: "Email verified!" });
+  }
+
+  res.status(400).json({ success: false, message: "Invalid code." });
+});
 
 // ---------------- PAYMONGO CHECKOUT ----------------
 app.post("/api/paymongo/checkout", async (req, res) => {
@@ -41,7 +93,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
               {
                 name: name || "GCash Purchase",
                 quantity: 1,
-                amount: amount || 5000, // ₱50.00
+                amount: amount || 5000,
                 currency: "PHP",
               },
             ],
@@ -60,13 +112,12 @@ app.post("/api/paymongo/checkout", async (req, res) => {
       return res.status(response.status).json({ success: false, error: data });
     }
 
-    // ✅ Use the checkout session ID as the reference ID
     const reference_id = data?.data?.id || null;
 
     res.json({
       success: true,
       checkout_url: data.data.attributes.checkout_url,
-      reference_id, // e.g., "chkout_abc123"
+      reference_id,
     });
   } catch (err) {
     console.error("Checkout creation failed:", err);
@@ -77,12 +128,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
   }
 });
 
-
-
-
-
-
-
+// ---------------- PAYMONGO WEBHOOK ----------------
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
@@ -140,14 +186,12 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       return res.sendStatus(404);
     }
 
-    // Process all matched transactions
     for (const doc of snapshot.docs) {
       const transaction = doc.data();
       const userId = transaction.user_id;
       const quantity = transaction.quantity || 1;
       const offerId = transaction.offer_id || null;
 
-      // ✅ Update transaction status
       await doc.ref.update({
         status: payment_status,
         last_updated: admin.firestore.FieldValue.serverTimestamp(),
@@ -155,7 +199,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
-      // ✅ Only process successful/paid transactions
       if ((payment_status === "successful" || payment_status === "paid") && userId && offerId) {
         const offerSnapshot = await db.collection("offers").doc(offerId).get();
         if (!offerSnapshot.exists) {
@@ -166,26 +209,21 @@ app.post("/api/paymongo/webhook", async (req, res) => {
         const offerData = offerSnapshot.data();
         const offerItems = offerData.items || [];
 
-        // Get inventory
         const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
         const inventoryDoc = await inventoryDocRef.get();
         const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
         let gems = currentInventory.gems || 0;
         let items = currentInventory.items || {};
 
-        // ✅ Loop through offer items here (inside)
         for (const offerItem of offerItems) {
           const itemId = offerItem.item_id;
-          // ✅ Use one of these depending on your design
-          const totalQty = offerItem.quantity || 1; // or (offerItem.quantity || 1) * quantity;
+          const totalQty = offerItem.quantity || 1;
 
-          // Get item info
           const itemSnapshot = await db.collection("items").doc(itemId).get();
           const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
           const isGem = (itemData.category || "").toLowerCase() === "gem";
 
           if (isGem) {
-            // 💎 Add gems to inventory
             gems += totalQty;
             await inventoryDocRef.set(
               {
@@ -196,7 +234,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
             );
             console.log(`💎 Added ${totalQty} Gems → Total: ${gems}`);
           } else {
-            // 🎁 Add other items
             const existing = items[itemId] || {};
             const updatedQty = (existing.quantity || 0) + totalQty;
 
@@ -227,31 +264,8 @@ app.post("/api/paymongo/webhook", async (req, res) => {
   }
 });
 
-
-
-
-
-
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
