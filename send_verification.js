@@ -1,15 +1,12 @@
 import express from "express";
-import cors from "cors";
 import nodemailer from "nodemailer";
 
-const app = express();
-app.use(express.json());
-app.use(cors());
+const router = express.Router();
 
 // Temporary store (you can use Redis or Firestore for production)
 const verificationCodes = new Map();
 
-app.post("/api/send-verification", async (req, res) => {
+router.post("/api/send-verification", async (req, res) => {
   const { email, user_id } = req.body;
 
   if (!email || !user_id)
@@ -26,7 +23,7 @@ app.post("/api/send-verification", async (req, res) => {
     service: "gmail",
     auth: {
       user: process.env.EMAIL_USER, // your Gmail address
-      pass: process.env.EMAIL_PASS, // app password (not your real password)
+      pass: process.env.EMAIL_PASS, // Gmail App Password
     },
   });
 
@@ -48,7 +45,7 @@ app.post("/api/send-verification", async (req, res) => {
 });
 
 // Verify endpoint
-app.post("/api/verify-code", (req, res) => {
+router.post("/api/verify-code", (req, res) => {
   const { user_id, code } = req.body;
 
   if (!verificationCodes.has(user_id))
@@ -63,4 +60,4 @@ app.post("/api/verify-code", (req, res) => {
   res.status(400).json({ success: false, message: "Invalid code." });
 });
 
-app.listen(3000, () => console.log("✅ Server running on port 3000"));
+export default router;
