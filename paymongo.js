@@ -24,6 +24,7 @@ const db = admin.firestore();
 const verificationCodes = new Map();
 
 app.post("/api/send-verification", async (req, res) => {
+  console.log("📩 Incoming body:", req.body);
   const { email, user_id } = req.body;
 
   if (!email || !user_id)
@@ -269,3 +270,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
