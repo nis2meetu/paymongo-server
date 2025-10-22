@@ -28,29 +28,36 @@ app.post("/api/send-verification", async (req, res) => {
   console.log("📩 Incoming body:", req.body);
   const { email, user_id } = req.body;
 
-  if (!email || !user_id)
+  if (!email || !user_id) {
+    console.log("❌ Missing email or user_id");
     return res.status(400).json({ error: "Missing email or user_id" });
+  }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
   const expiresAt = admin.firestore.Timestamp.fromDate(
-    new Date(Date.now() + 5 * 60 * 1000) // expires in 5 minutes
+    new Date(Date.now() + 5 * 60 * 1000)
   );
 
+  console.log(`Generated code: ${code} for user: ${user_id}`);
+  console.log("Expires at:", expiresAt.toDate().toISOString());
+
   try {
-    // Save code to Firestore
-    await db.collection("email_verifications").doc(user_id).set({
+    const docRef = db.collection("email_verifications").doc(user_id);
+    console.log("📄 Writing to Firestore doc:", docRef.path);
+
+    await docRef.set({
       email,
       code,
       expires_at: expiresAt,
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    console.log("✅ Firestore write successful!");
+
+    // Send email
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
     const mailOptions = {
@@ -62,45 +69,57 @@ app.post("/api/send-verification", async (req, res) => {
     };
 
     await transporter.sendMail(mailOptions);
+    console.log("📨 Email sent successfully to", email);
+
     res.json({ success: true, message: "Verification email sent." });
   } catch (err) {
-    console.error("Error sending verification email:", err);
+    console.error("❌ Error writing to Firestore or sending email:", err);
     res.status(500).json({ success: false, error: "Failed to send email." });
   }
 });
 
 
 app.post("/api/verify-code", async (req, res) => {
+  console.log("🔍 Verification request body:", req.body);
   const { user_id, code } = req.body;
 
-  if (!user_id || !code)
+  if (!user_id || !code) {
+    console.log("❌ Missing user_id or code");
     return res.status(400).json({ error: "Missing user_id or code" });
+  }
 
   try {
     const docRef = db.collection("email_verifications").doc(user_id);
     const doc = await docRef.get();
 
-    if (!doc.exists)
+    if (!doc.exists) {
+      console.log("❌ No verification document found for user:", user_id);
       return res.status(400).json({ success: false, message: "No code found." });
+    }
 
     const data = doc.data();
+    console.log("📄 Firestore doc data:", data);
+
     const now = admin.firestore.Timestamp.now();
-
-    if (now.toMillis() > data.expires_at.toMillis())
+    if (now.toMillis() > data.expires_at.toMillis()) {
+      console.log("❌ Code expired for user:", user_id);
       return res.status(400).json({ success: false, message: "Code expired." });
+    }
 
-    if (data.code !== code)
+    if (data.code !== code) {
+      console.log("❌ Invalid code entered:", code, "expected:", data.code);
       return res.status(400).json({ success: false, message: "Invalid code." });
+    }
 
-    // Code is valid, delete it after verification
     await docRef.delete();
-
+    console.log("✅ Code verified and deleted for user:", user_id);
     res.json({ success: true, message: "Email verified!" });
   } catch (err) {
-    console.error("Error verifying code:", err);
+    console.error("❌ Error verifying code:", err);
     res.status(500).json({ success: false, message: "Server error." });
   }
 });
+
 
 // ---------------- PAYMONGO CHECKOUT ----------------
 app.post("/api/paymongo/checkout", async (req, res) => {
@@ -297,5 +316,6 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
