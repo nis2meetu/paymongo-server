@@ -88,11 +88,6 @@ app.post("/api/send-verification", async (req, res) => {
   }
 });
 
-// ---------------- START SERVER ----------------
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Verification API running on port ${PORT}`);
-});
 
 
 app.post("/api/verify-code", async (req, res) => {
@@ -332,6 +327,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
