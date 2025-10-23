@@ -56,18 +56,16 @@ app.post("/api/send-verification", async (req, res) => {
     console.log("✅ Firestore write successful!");
 
     // ---------------- Nodemailer SMTP ----------------
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 587,
-      secure: false, // TLS
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // App password
-      },
-      tls: {
-        rejectUnauthorized: false, // helps avoid Render SSL issues
-      },
-    });
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 465,
+  secure: true, // SSL
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 
     console.log("📧 Sending verification email via SMTP...");
     const mailOptions = {
@@ -327,6 +325,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
