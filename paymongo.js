@@ -34,38 +34,32 @@ app.post("/api/send-verification", async (req, res) => {
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = admin.firestore.Timestamp.fromDate(
-    new Date(Date.now() + 5 * 60 * 1000) // expires in 5 minutes
-  );
 
   console.log(`Generated code: ${code} for user: ${user_id}`);
-  console.log("Expires at:", expiresAt.toDate().toISOString());
 
   try {
-    // Save code to Firestore
+    // Save code to Firestore (without expiration)
     const docRef = db.collection("email_verifications").doc(user_id);
     console.log("📄 Writing to Firestore doc:", docRef.path);
 
     await docRef.set({
       email,
       code,
-      expires_at: expiresAt,
       created_at: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     console.log("✅ Firestore write successful!");
 
     // ---------------- Nodemailer SMTP ----------------
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true, // SSL
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 465,
+      secure: true, // SSL
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
+    });
 
     console.log("📧 Sending verification email via SMTP...");
     const mailOptions = {
@@ -325,6 +319,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
