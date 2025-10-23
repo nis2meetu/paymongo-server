@@ -3,6 +3,7 @@ const express = require("express");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const admin = require("firebase-admin");
+const { Resend } = require("resend");
 
 const app = express();
 app.use(express.json());
@@ -18,9 +19,6 @@ admin.initializeApp({
 });
 
 const db = admin.firestore();
-
-// ---------------- EMAIL VERIFICATION ----------------
-
 
 // ---------------- EMAIL VERIFICATION ----------------
 app.post("/api/send-verification", async (req, res) => {
@@ -49,40 +47,25 @@ app.post("/api/send-verification", async (req, res) => {
 
     console.log("✅ Firestore write successful!");
 
-   // ---------------- Resend Email API ----------------
-const { Resend } = require("resend");
-const resend = new Resend(process.env.RESEND_API_KEY);
+    // ---------------- RESEND EMAIL API ----------------
+    const resend = new Resend(process.env.RESEND_API_KEY);
 
-console.log("📧 Sending verification email via Resend...");
-
-await resend.emails.send({
-  from: "Game Support <onboarding@resend.dev>", // or your verified sender
-  to: email,
-  subject: "Verify your email address",
-  html: `<h2>Your verification code</h2><p style="font-size:18px;"><b>${code}</b></p>`,
-});
-
-console.log("✅ Email sent successfully to", email);
-
-
-    console.log("📧 Sending verification email via SMTP...");
-    const mailOptions = {
-      from: `"Game Support" <${process.env.EMAIL_USER}>`,
+    console.log("📧 Sending verification email via Resend...");
+    await resend.emails.send({
+      from: "Game Support <onboarding@resend.dev>", // or your verified domain
       to: email,
       subject: "Verify your email address",
-      text: `Your verification code is: ${code}`,
       html: `<h2>Your verification code</h2><p style="font-size:18px;"><b>${code}</b></p>`,
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
     console.log("✅ Email sent successfully to", email);
-
     res.json({ success: true, message: "Verification email sent." });
   } catch (err) {
     console.error("❌ Error sending verification email:", err);
     res.status(500).json({ success: false, error: "Failed to send email." });
   }
 });
+
 
 
 
@@ -323,6 +306,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
