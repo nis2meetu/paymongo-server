@@ -3,7 +3,6 @@ const express = require("express");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.json());
@@ -50,16 +49,21 @@ app.post("/api/send-verification", async (req, res) => {
 
     console.log("✅ Firestore write successful!");
 
-    // ---------------- Nodemailer SMTP ----------------
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true, // SSL
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
+   // ---------------- Resend Email API ----------------
+const { Resend } = require("resend");
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+console.log("📧 Sending verification email via Resend...");
+
+await resend.emails.send({
+  from: "Game Support <onboarding@resend.dev>", // or your verified sender
+  to: email,
+  subject: "Verify your email address",
+  html: `<h2>Your verification code</h2><p style="font-size:18px;"><b>${code}</b></p>`,
+});
+
+console.log("✅ Email sent successfully to", email);
+
 
     console.log("📧 Sending verification email via SMTP...");
     const mailOptions = {
@@ -319,6 +323,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
