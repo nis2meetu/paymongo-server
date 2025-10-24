@@ -20,23 +20,35 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
-// ---------------- EMAIL TRANSPORTER (Nodemailer + Gmail) ----------------
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false,
-  auth: {
-    user: process.env.EMAIL_USER,// from your Brevo account
-    pass: process.env.BREVO_SMTP_KEY, // your generated SMTP key
-  },
-});
 
+// ---------------- SEND EMAIL FUNCTION (BREVO REST API) ----------------
+async function sendVerificationEmail(email, code) {
+  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: {
+      "accept": "application/json",
+      "api-key": process.env.BREVO_API_KEY, // set this in Render env
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      sender: { name: "Game Support", email: "99f5f6001@smtp-brevo.com" },
+      to: [{ email }],
+      subject: "Verify your email address",
+      htmlContent: `
+        <h2>Your verification code</h2>
+        <p style="font-size:18px;"><b>${code}</b></p>
+        <p>This code will expire in 10 minutes.</p>
+      `,
+    }),
+  });
 
-// Verify connection (optional, for testing)
-transporter.verify((error, success) => {
-  if (error) console.error("❌ Email transporter error:", error);
-  else console.log("✅ Email transporter ready to send messages");
-});
+  if (!response.ok) {
+    const text = await response.text();
+    console.error("❌ Brevo API Error:", text);
+    throw new Error(`Brevo API error: ${text}`);
+  }
+  console.log("✅ Brevo email sent successfully to", email);
+}
 
 // ---------------- EMAIL VERIFICATION ----------------
 app.post("/api/send-verification", async (req, res) => {
@@ -62,20 +74,9 @@ app.post("/api/send-verification", async (req, res) => {
 
     console.log(`✅ Code ${code} stored for ${user_id}, expires at ${expiresAt}`);
 
-    // ---------------- SEND EMAIL ----------------
-    const mailOptions = {
-      from: `"Game Support" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: "Verify your email address",
-      html: `
-        <h2>Your verification code</h2>
-        <p style="font-size:18px;"><b>${code}</b></p>
-        <p>This code will expire in 10 minutes.</p>
-      `,
-    };
+    // Send email via Brevo API
+    await sendVerificationEmail(email, code);
 
-    await transporter.sendMail(mailOptions);
-    console.log("✅ Email sent successfully to", email);
     res.json({ success: true, message: "Verification email sent." });
   } catch (err) {
     console.error("❌ Error sending verification email:", err);
@@ -120,7 +121,6 @@ app.post("/api/verify-code", async (req, res) => {
     res.status(500).json({ success: false, message: "Server error." });
   }
 });
-
 
 
 // ---------------- PAYMONGO CHECKOUT ----------------
@@ -318,6 +318,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
