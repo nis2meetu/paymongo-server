@@ -22,12 +22,15 @@ const db = admin.firestore();
 
 // ---------------- EMAIL TRANSPORTER (Nodemailer + Gmail) ----------------
 const transporter = nodemailer.createTransport({
-  service: "gmail",
+  host: "smtp-relay.brevo.com",
+  port: 587,
+  secure: false,
   auth: {
-    user: process.env.EMAIL_USER, // your Gmail address
-    pass: process.env.EMAIL_PASS, // your App Password (NOT your Gmail password)
+    user: "99f5f6001@smtp-brevo.com", // from your Brevo account
+    pass: process.env.BREVO_SMTP_KEY, // your generated SMTP key
   },
 });
+
 
 // Verify connection (optional, for testing)
 transporter.verify((error, success) => {
@@ -315,6 +318,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
