@@ -3,7 +3,7 @@ const express = require("express");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const { Resend } = require("resend");
+const nodemailer = require("nodemailer");
 
 const app = express();
 app.use(express.json());
@@ -20,6 +20,21 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
+// ---------------- EMAIL TRANSPORTER (Nodemailer + Gmail) ----------------
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER, // your Gmail address
+    pass: process.env.EMAIL_PASS, // your App Password (NOT your Gmail password)
+  },
+});
+
+// Verify connection (optional, for testing)
+transporter.verify((error, success) => {
+  if (error) console.error("❌ Email transporter error:", error);
+  else console.log("✅ Email transporter ready to send messages");
+});
+
 // ---------------- EMAIL VERIFICATION ----------------
 app.post("/api/send-verification", async (req, res) => {
   console.log("📩 Incoming body:", req.body);
@@ -30,7 +45,7 @@ app.post("/api/send-verification", async (req, res) => {
   }
 
   const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
   try {
     // Save code to Firestore
@@ -44,15 +59,19 @@ app.post("/api/send-verification", async (req, res) => {
 
     console.log(`✅ Code ${code} stored for ${user_id}, expires at ${expiresAt}`);
 
-    // ---------------- RESEND EMAIL API ----------------
-    const resend = new Resend(process.env.RESEND_API_KEY);
-    await resend.emails.send({
-      from: "Game Support <onboarding@resend.dev>", // or your verified domain
+    // ---------------- SEND EMAIL ----------------
+    const mailOptions = {
+      from: `"Game Support" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Verify your email address",
-      html: `<h2>Your verification code</h2><p style="font-size:18px;"><b>${code}</b></p><p>This code will expire in 10 minutes.</p>`,
-    });
+      html: `
+        <h2>Your verification code</h2>
+        <p style="font-size:18px;"><b>${code}</b></p>
+        <p>This code will expire in 10 minutes.</p>
+      `,
+    };
 
+    await transporter.sendMail(mailOptions);
     console.log("✅ Email sent successfully to", email);
     res.json({ success: true, message: "Verification email sent." });
   } catch (err) {
@@ -296,6 +315,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
