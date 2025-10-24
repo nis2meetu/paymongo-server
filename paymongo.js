@@ -26,7 +26,7 @@ const transporter = nodemailer.createTransport({
   port: 587,
   secure: false,
   auth: {
-    user: "99f5f6001@smtp-brevo.com", // from your Brevo account
+    user: process.env.EMAIL_USER,// from your Brevo account
     pass: process.env.BREVO_SMTP_KEY, // your generated SMTP key
   },
 });
@@ -318,6 +318,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
