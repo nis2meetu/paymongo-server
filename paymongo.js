@@ -146,7 +146,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
                 currency: "PHP",
               },
             ],
-            payment_method_types: ["gcash", "card"],
+            payment_method_types: ["gcash"],
             success_url: "https://paymongo.com",
             cancel_url: "https://paymongo.com",
           },
@@ -318,6 +318,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
