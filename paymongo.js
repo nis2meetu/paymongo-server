@@ -78,6 +78,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
 
 // ---------------- PAYMONGO WEBHOOK ----------------
 // ---------------- PAYMONGO WEBHOOK ----------------
+// ---------------- PAYMONGO WEBHOOK ----------------
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
     const event = req.body;
@@ -138,7 +139,6 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     for (const doc of snapshot.docs) {
       const transaction = doc.data();
       const userId = transaction.user_id;
-      const quantity = transaction.quantity || 1;
       const offerId = transaction.offer_id || null;
 
       // Update transaction status
@@ -162,22 +162,22 @@ app.post("/api/paymongo/webhook", async (req, res) => {
         const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
         const inventoryDoc = await inventoryDocRef.get();
         const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
+
         let gems = currentInventory.gems || 0;
         let items = currentInventory.items || {};
-
         let totalQuantity = 0;
 
-        // Count total quantity of non-gem items
+        // Count non-gem items
         for (const offerItem of offerItems) {
           const itemSnapshot = await db.collection("items").doc(offerItem.item_id).get();
           const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
           const isGem = (itemData.category || "").toLowerCase() === "gem";
 
           if (isGem) {
-            gems += offerItem.quantity || 0;
+            gems += offerItem.quantity || 0; // Gems only go to gems field
             console.log(`💎 Added ${offerItem.quantity || 0} Gems → Total: ${gems}`);
           } else {
-            totalQuantity += offerItem.quantity || 1;
+            totalQuantity += offerItem.quantity || 1; // Only non-gems count for offer
           }
         }
 
@@ -187,23 +187,25 @@ app.post("/api/paymongo/webhook", async (req, res) => {
           { merge: true }
         );
 
-        // Save or update the offer as a single item entry
-        if (items[offerId]) {
-          items[offerId].quantity += totalQuantity;
-          items[offerId].last_updated = admin.firestore.FieldValue.serverTimestamp();
-        } else {
-          items[offerId] = {
-            offer_id: offerId,
-            title: offerData.title || "",
-            description: offerData.description || "",
-            quantity: totalQuantity,
-            added_at: admin.firestore.FieldValue.serverTimestamp(),
-            last_updated: admin.firestore.FieldValue.serverTimestamp(),
-          };
-        }
+        // Only save non-gem offer entries in items
+        if (totalQuantity > 0) {
+          if (items[offerId]) {
+            items[offerId].quantity += totalQuantity;
+            items[offerId].last_updated = admin.firestore.FieldValue.serverTimestamp();
+          } else {
+            items[offerId] = {
+              offer_id: offerId,
+              title: offerData.title || "",
+              description: offerData.description || "",
+              quantity: totalQuantity,
+              added_at: admin.firestore.FieldValue.serverTimestamp(),
+              last_updated: admin.firestore.FieldValue.serverTimestamp(),
+            };
+          }
 
-        await inventoryDocRef.set({ items }, { merge: true });
-        console.log(`📦 Saved/Updated offer in inventory: ${offerId} | Qty: ${items[offerId].quantity}`);
+          await inventoryDocRef.set({ items }, { merge: true });
+          console.log(`📦 Saved/Updated offer in inventory: ${offerId} | Qty: ${items[offerId].quantity}`);
+        }
       }
     }
 
@@ -215,11 +217,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 });
 
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
