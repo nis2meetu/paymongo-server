@@ -21,107 +21,6 @@ admin.initializeApp({
 const db = admin.firestore();
 
 
-// ---------------- SEND EMAIL FUNCTION (BREVO REST API) ----------------
-async function sendVerificationEmail(email, code) {
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: {
-      "accept": "application/json",
-      "api-key": process.env.BREVO_API_KEY, // set this in Render env
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      sender: { name: "Game Support", email: "99f5f6001@smtp-brevo.com" },
-      to: [{ email }],
-      subject: "Verify your email address",
-      htmlContent: `
-        <h2>Your verification code</h2>
-        <p style="font-size:18px;"><b>${code}</b></p>
-        <p>This code will expire in 10 minutes.</p>
-      `,
-    }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    console.error("❌ Brevo API Error:", text);
-    throw new Error(`Brevo API error: ${text}`);
-  }
-  console.log("✅ Brevo email sent successfully to", email);
-}
-
-// ---------------- EMAIL VERIFICATION ----------------
-app.post("/api/send-verification", async (req, res) => {
-  console.log("📩 Incoming body:", req.body);
-  const { email, user_id } = req.body;
-
-  if (!email || !user_id) {
-    return res.status(400).json({ error: "Missing email or user_id" });
-  }
-
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-
-  try {
-    // Save code to Firestore
-    const docRef = db.collection("email_verifications").doc(user_id);
-    await docRef.set({
-      email,
-      code,
-      created_at: admin.firestore.FieldValue.serverTimestamp(),
-      expires_at: admin.firestore.Timestamp.fromDate(expiresAt),
-    });
-
-    console.log(`✅ Code ${code} stored for ${user_id}, expires at ${expiresAt}`);
-
-    // Send email via Brevo API
-    await sendVerificationEmail(email, code);
-
-    res.json({ success: true, message: "Verification email sent." });
-  } catch (err) {
-    console.error("❌ Error sending verification email:", err);
-    res.status(500).json({ success: false, error: "Failed to send email." });
-  }
-});
-
-// ---------------- VERIFY CODE ----------------
-app.post("/api/verify-code", async (req, res) => {
-  console.log("🔍 Verification request body:", req.body);
-  const { user_id, code } = req.body;
-
-  if (!user_id || !code) {
-    return res.status(400).json({ error: "Missing user_id or code" });
-  }
-
-  try {
-    const docRef = db.collection("email_verifications").doc(user_id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return res.status(400).json({ success: false, message: "No code found." });
-    }
-
-    const data = doc.data();
-    const now = admin.firestore.Timestamp.now();
-
-    if (now.toMillis() > data.expires_at.toMillis()) {
-      await docRef.delete(); // cleanup
-      return res.status(400).json({ success: false, message: "Code expired." });
-    }
-
-    if (data.code !== code) {
-      return res.status(400).json({ success: false, message: "Invalid code." });
-    }
-
-    await docRef.delete();
-    console.log("✅ Code verified and deleted for user:", user_id);
-    res.json({ success: true, message: "Email verified!" });
-  } catch (err) {
-    console.error("❌ Error verifying code:", err);
-    res.status(500).json({ success: false, message: "Server error." });
-  }
-});
-
 
 // ---------------- PAYMONGO CHECKOUT ----------------
 app.post("/api/paymongo/checkout", async (req, res) => {
@@ -177,6 +76,7 @@ app.post("/api/paymongo/checkout", async (req, res) => {
   }
 });
 
+// ---------------- PAYMONGO WEBHOOK ----------------
 // ---------------- PAYMONGO WEBHOOK ----------------
 app.post("/api/paymongo/webhook", async (req, res) => {
   try {
@@ -241,6 +141,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
       const quantity = transaction.quantity || 1;
       const offerId = transaction.offer_id || null;
 
+      // Update transaction status
       await doc.ref.update({
         status: payment_status,
         last_updated: admin.firestore.FieldValue.serverTimestamp(),
@@ -248,61 +149,63 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
-   if ((payment_status === "successful" || payment_status === "paid") && userId && offerId) {
-  const offerSnapshot = await db.collection("offers").doc(offerId).get();
-  if (!offerSnapshot.exists) {
-    console.warn(`⚠️ Offer not found: ${offerId}`);
-    continue;
-  }
+      if ((payment_status === "successful" || payment_status === "paid") && userId && offerId) {
+        const offerSnapshot = await db.collection("offers").doc(offerId).get();
+        if (!offerSnapshot.exists) {
+          console.warn(`⚠️ Offer not found: ${offerId}`);
+          continue;
+        }
 
-  const offerData = offerSnapshot.data();
-  const offerItems = offerData.items || [];
+        const offerData = offerSnapshot.data();
+        const offerItems = offerData.items || [];
 
-  const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
-  const inventoryDoc = await inventoryDocRef.get();
-  const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
+        const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
+        const inventoryDoc = await inventoryDocRef.get();
+        const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
+        let gems = currentInventory.gems || 0;
+        let items = currentInventory.items || {};
 
-  let gems = currentInventory.gems || 0;
-  let items = currentInventory.items || {};
+        let totalQuantity = 0;
 
-  let totalQuantity = 0;
+        // Count total quantity of non-gem items
+        for (const offerItem of offerItems) {
+          const itemSnapshot = await db.collection("items").doc(offerItem.item_id).get();
+          const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
+          const isGem = (itemData.category || "").toLowerCase() === "gem";
 
-  // Count total quantity of non-gem items
-  for (const offerItem of offerItems) {
-    const itemSnapshot = await db.collection("items").doc(offerItem.item_id).get();
-    const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
-    const isGem = (itemData.category || "").toLowerCase() === "gem";
+          if (isGem) {
+            gems += offerItem.quantity || 0;
+            console.log(`💎 Added ${offerItem.quantity || 0} Gems → Total: ${gems}`);
+          } else {
+            totalQuantity += offerItem.quantity || 1;
+          }
+        }
 
-    if (isGem) {
-      gems += offerItem.quantity || 0;
-      console.log(`💎 Added ${offerItem.quantity || 0} Gems → Total: ${gems}`);
-    } else {
-      totalQuantity += offerItem.quantity || 1;
+        // Save gems separately
+        await inventoryDocRef.set(
+          { gems, last_updated: admin.firestore.FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+
+        // Save or update the offer as a single item entry
+        if (items[offerId]) {
+          items[offerId].quantity += totalQuantity;
+          items[offerId].last_updated = admin.firestore.FieldValue.serverTimestamp();
+        } else {
+          items[offerId] = {
+            offer_id: offerId,
+            title: offerData.title || "",
+            description: offerData.description || "",
+            quantity: totalQuantity,
+            added_at: admin.firestore.FieldValue.serverTimestamp(),
+            last_updated: admin.firestore.FieldValue.serverTimestamp(),
+          };
+        }
+
+        await inventoryDocRef.set({ items }, { merge: true });
+        console.log(`📦 Saved/Updated offer in inventory: ${offerId} | Qty: ${items[offerId].quantity}`);
+      }
     }
-  }
-
-  // Save gems separately
-  await inventoryDocRef.set({ gems, last_updated: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-
-  // Save or update offer as a single item entry
-  if (items[offerId]) {
-    items[offerId].quantity += totalQuantity;
-    items[offerId].last_updated = admin.firestore.FieldValue.serverTimestamp();
-  } else {
-    items[offerId] = {
-      offer_id: offerId,
-      title: offerData.title || "",
-      description: offerData.description || "",
-      quantity: totalQuantity,
-      added_at: admin.firestore.FieldValue.serverTimestamp(),
-      last_updated: admin.firestore.FieldValue.serverTimestamp(),
-    };
-  }
-
-  await inventoryDocRef.set({ items }, { merge: true });
-  console.log(`📦 Saved/Updated offer in inventory: ${offerId} | Qty: ${items[offerId].quantity}`);
-}
-
 
     res.sendStatus(200);
   } catch (err) {
@@ -311,11 +214,13 @@ app.post("/api/paymongo/webhook", async (req, res) => {
   }
 });
 
+
 // ---------------- START SERVER ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
