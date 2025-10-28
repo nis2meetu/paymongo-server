@@ -248,63 +248,61 @@ app.post("/api/paymongo/webhook", async (req, res) => {
 
       console.log(`✅ Updated transaction ${doc.id} → ${payment_status}`);
 
-      if ((payment_status === "successful" || payment_status === "paid") && userId && offerId) {
-        const offerSnapshot = await db.collection("offers").doc(offerId).get();
-        if (!offerSnapshot.exists) {
-          console.warn(`⚠️ Offer not found: ${offerId}`);
-          continue;
-        }
+   if ((payment_status === "successful" || payment_status === "paid") && userId && offerId) {
+  const offerSnapshot = await db.collection("offers").doc(offerId).get();
+  if (!offerSnapshot.exists) {
+    console.warn(`⚠️ Offer not found: ${offerId}`);
+    continue;
+  }
 
-        const offerData = offerSnapshot.data();
-        const offerItems = offerData.items || [];
+  const offerData = offerSnapshot.data();
+  const offerItems = offerData.items || [];
 
-        const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
-        const inventoryDoc = await inventoryDocRef.get();
-        const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
-        let gems = currentInventory.gems || 0;
-        let items = currentInventory.items || {};
+  const inventoryDocRef = db.doc(`users/players/${userId}/inventory`);
+  const inventoryDoc = await inventoryDocRef.get();
+  const currentInventory = inventoryDoc.exists ? inventoryDoc.data() : {};
 
-        for (const offerItem of offerItems) {
-          const itemId = offerItem.item_id;
-          const totalQty = offerItem.quantity || 1;
+  let gems = currentInventory.gems || 0;
+  let items = currentInventory.items || {};
 
-          const itemSnapshot = await db.collection("items").doc(itemId).get();
-          const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
-          const isGem = (itemData.category || "").toLowerCase() === "gem";
+  let totalQuantity = 0;
 
-          if (isGem) {
-            gems += totalQty;
-            await inventoryDocRef.set(
-              {
-                gems,
-                last_updated: admin.firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            );
-            console.log(`💎 Added ${totalQty} Gems → Total: ${gems}`);
-          } else {
-            const existing = items[itemId] || {};
-            const updatedQty = (existing.quantity || 0) + totalQty;
+  // Count total quantity of non-gem items
+  for (const offerItem of offerItems) {
+    const itemSnapshot = await db.collection("items").doc(offerItem.item_id).get();
+    const itemData = itemSnapshot.exists ? itemSnapshot.data() : {};
+    const isGem = (itemData.category || "").toLowerCase() === "gem";
 
-            items[itemId] = {
-              ...existing,
-              item_id: itemId,
-              quantity: updatedQty,
-              obtained_at: admin.firestore.FieldValue.serverTimestamp(),
-            };
-
-            await inventoryDocRef.set(
-              {
-                items,
-                last_updated: admin.firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true }
-            );
-            console.log(`🎁 Added item ${itemId} +${totalQty} → ${updatedQty}`);
-          }
-        }
-      }
+    if (isGem) {
+      gems += offerItem.quantity || 0;
+      console.log(`💎 Added ${offerItem.quantity || 0} Gems → Total: ${gems}`);
+    } else {
+      totalQuantity += offerItem.quantity || 1;
     }
+  }
+
+  // Save gems separately
+  await inventoryDocRef.set({ gems, last_updated: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+
+  // Save or update offer as a single item entry
+  if (items[offerId]) {
+    items[offerId].quantity += totalQuantity;
+    items[offerId].last_updated = admin.firestore.FieldValue.serverTimestamp();
+  } else {
+    items[offerId] = {
+      offer_id: offerId,
+      title: offerData.title || "",
+      description: offerData.description || "",
+      quantity: totalQuantity,
+      added_at: admin.firestore.FieldValue.serverTimestamp(),
+      last_updated: admin.firestore.FieldValue.serverTimestamp(),
+    };
+  }
+
+  await inventoryDocRef.set({ items }, { merge: true });
+  console.log(`📦 Saved/Updated offer in inventory: ${offerId} | Qty: ${items[offerId].quantity}`);
+}
+
 
     res.sendStatus(200);
   } catch (err) {
@@ -318,6 +316,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
