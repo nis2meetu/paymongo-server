@@ -175,7 +175,7 @@ app.post("/api/paymongo/webhook", async (req, res) => {
     if (!itemSnap.exists) continue;
 
     const itemData = itemSnap.data();
-    const category = (itemData.category || "").toLowerCase();
+  const category = (itemData.category || "").trim().toLowerCase();
     const quantity = offerItem.quantity || 1;
 
     // 💎 Gems
@@ -262,6 +262,7 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 PayMongo API running on port ${PORT}`);
 });
+
 
 
 
